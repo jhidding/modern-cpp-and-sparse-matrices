@@ -1,5 +1,10 @@
 version = "2.4"
 style = "basic"
 watch_list = ["docs/*.md"]
-ignore_list = ["docs/index.md", "docs/markdown.md"]
+ignore_list = ["docs/zensical.md", "docs/markdown.md"]
+
+[[languages]]
+name = "Meson Build"
+identifiers = ["meson"]
+comment = { open = "#" }
 
