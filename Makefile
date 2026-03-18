@@ -1,7 +1,7 @@
 .PHONY: serve default
 .FORCE:
 
-targets := hello
+targets = hello jetzt eigen-hello
 run := uv run
 
 default: debug
@@ -20,8 +20,13 @@ build/%/build.ninja: | meson.build
 
 # By adding .FORCE we always run this rule when asked for. Ninja can find
 # out if anything needs to happen or not.
-build/%/hello: build/%/build.ninja .FORCE
-	$(run) ninja -C $(@D) hello
+define executable_template =
+$(info executable "$(1)")
+build/%/$(1): build/%/build.ninja .FORCE
+	$(run) ninja -C $$(@D) $(1)
+endef
 
-debug: build/debug/hello build/debug/jetzt
-release: build/release/hello build/release/jetzt
+$(foreach tgt,$(targets),$(eval $(call executable_template,$(tgt))))
+
+debug: $(targets:%=build/debug/%)
+release: $(targets:%=build/release/%)
