@@ -4,6 +4,11 @@
 targets = hello jetzt eigen-hello
 run := uv run
 
+_bullet := "\\e[1m•\\e[m"
+_green := "\\e[32m"
+_cyan := "\\e[36m"
+_reset := "\\e[m"
+
 default: debug
 
 serve:
@@ -16,19 +21,20 @@ serve:
 # through running ninja. By making meson.build an order-only dependency
 # using the | symbol, this rule is only run if build.ninja doesn't exist.
 build/%/build.ninja: | meson.build
-	$(run) meson setup --buildtype $(@D:build/%=%) $(@D)
+	@echo -e "$(_bullet) Running $(_cyan)meson setup$(_reset) for buildtype $(_green)$(@D:build/%=%)$(_reset)"
+	@$(run) meson setup --buildtype $(@D:build/%=%) $(@D)
 
 # By adding .FORCE we always run this rule when asked for. Ninja can find
 # out if anything needs to happen or not.
 define executable_template =
-$(info executable "$(1)")
 build/%/$(1): build/%/build.ninja .FORCE
-	$(run) ninja -C $$(@D) $(1)
+	@echo -e "$(_bullet) Building $(_cyan)$$(@D:build/%=%)$(_reset) executable $(_green)$(1)$(_reset)"
+	@$(run) ninja -C $$(@D) $(1)
 endef
 
 $(foreach tgt,$(targets),$(eval $(call executable_template,$(tgt))))
 
 debug: $(targets:%=build/debug/%)
-	ln -sf debug/compile_commands.json build/
+	@ln -sf debug/compile_commands.json build/
 
 release: $(targets:%=build/release/%)

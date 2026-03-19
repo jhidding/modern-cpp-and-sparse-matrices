@@ -31,12 +31,12 @@ ninja -C build
 
 By default, this will create a debug executable (i.e. `-O0 -g`). To get a release build, add `--buildtype release` to the Meson command.
 
+### Makefile
+This project also has a `Makefile` for ease-of-use. Without arguments `make` will perform a debug build in `build/debug`. For release build, run `make release`. Please appreciate the mess we're in: GNU Make calls Meson, that prepares a Ninja file, and then Make also calls Ninja. To be fair, once the build directories are setup, all you need to do is call `ninja -C build/debug` (or `release`) to rebuild, but that's still more characters than just `make`.
+
 ## Resources
 
 - [CPP Reference](https://en.cppreference.com/index.html)
 - [Zensical Documentation](https://zensical.org/docs/get-started/)
 - [Eigen Library](https://libeigen.gitlab.io/)
 - [Meson Build System](https://mesonbuild.com/)
-
-
-

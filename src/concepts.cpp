@@ -6,7 +6,7 @@
 
 // ~/~ begin <<docs/modern-cpp.md#semigroup-unit-decl>>[init]
 template <typename T>
-T unit();
+constexpr T unit();
 // ~/~ end
 // ~/~ begin <<docs/modern-cpp.md#string-semigroup>>[init]
 template <>

@@ -40,7 +40,7 @@ Multiplication operator is always there for us to overload. The `unit` factory n
 ```c++
 //| id: semigroup-unit-decl
 template <typename T>
-T unit();
+constexpr T unit();
 ```
 
 The concept is declared as follows.
@@ -106,7 +106,41 @@ constexpr Rotation unit<Rotation>() {
 
 Note that to convert a `Rotation` to an integer, an implicit cast suffices. Not so for the other way around. Also, now that we defined our own type, the compiler is fine with having the `Rotation` instance for the `SemiGroup` concept defined after the concept itself. Must be some weird voodoo.
 
+### Static assert
+I do have a critique of C++ concepts here: our use of the `power` function is constraint upon the first argument implementing the `SemiGroup` concept. However, the check for this concept is completely implicit. Yes, we've made our desires explicit, but for the compiler and its error messages not much has changed. In that sense, the system of traits and implementations in Rust is much nicer. There you declare that a type implements a certain trait, and if it doesn't do that correctly, that's where the error is raised. Then when someone calls a method on a type that doesn't implement the trait, the compiler has a much simpler error message to print.
+
+We can get a similar effect by adding `static_assert` statements.
+
+```c++
+//| file: src/static_assert_semigroup.cpp
+#include <concepts>
+
+<<semigroup-unit-decl>>
+<<semigroup-concept>>
+
+static_assert(SemiGroup<int>);
+static_assert(SemiGroup<char const *>);
+```
+
+If we compile that with `g++ --std=c++23 -c ./src/static_assert_semigroup.cpp`, we get the following message:
+
+```
+./src/static_assert_semigroup.cpp:27:15: fout: static assertion failed
+   27 | static_assert(SemiGroup<char const *>);
+      |               ^~~~~~~~~~~~~~~~~~~~~~~
+./src/static_assert_semigroup.cpp:27:15: note: constraints not satisfied
+./src/static_assert_semigroup.cpp:10:9:   required by the constraints of ‘template<class T> concept SemiGroup’
+./src/static_assert_semigroup.cpp:10:21:   in requirements with ‘const T& a’, ‘const T& b’ [with T = const char*]
+./src/static_assert_semigroup.cpp:11:9: note: the required expression ‘(a * b)’ is invalid
+   11 |     { a * b } -> std::convertible_to<T>;
+      |       ~~^~~
+cc1plus: note: set ‘-fconcepts-diagnostics-depth=’ to at least 2 for more detail
+```
+
+The first `static_assert` is passing, because `*` is implemented for `int`. The template specialization `constexpr int unit<int>()` is declared because we had to forward declare the generic template. Calling `power(2, 3)` will result in a linker error instead.
+
 ## Defining a formatter
+
 With the new `std::print` functionality, we may want to implement a `std::formatter` for our `Rotation` type. This implementation is adapted from [CPP Reference](https://en.cppreference.com/w/cpp/utility/format/formatter.html). I'll make it so that you can print a rotation in human readable (all lower case, space separated), snake upper case (all upper case with underscores), or as a plain integer. So:
 
 ```c++
@@ -217,6 +251,8 @@ constexpr char const *snake_case_fmt(Rotation r) {
 ```
 
 ### Concepts and String formatting example
+I've made a small example combining the use of concepts and string formatters.
+
 
 ```c++
 //| file: src/concepts.cpp
