@@ -30,3 +30,16 @@ int main() {
     return EXIT_SUCCESS;
 }
 ```
+
+## Linear Algebra
+
+We can further expand the example with some linear algebra.
+
+```c++
+//| file: src/eigen_dense.cpp
+#include <cstdlib>
+#include <print>
+#include <Eigen/Dense>
+
+
+```

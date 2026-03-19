@@ -29,4 +29,6 @@ endef
 $(foreach tgt,$(targets),$(eval $(call executable_template,$(tgt))))
 
 debug: $(targets:%=build/debug/%)
+	ln -sf debug/compile_commands.json build/
+
 release: $(targets:%=build/release/%)
