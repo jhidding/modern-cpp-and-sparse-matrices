@@ -74,13 +74,14 @@ int main() {
 ```meson
 #| id: meson-executables
 executable('solve-dense', 'src/solve-dense.cpp',
-    dependencies: [libeigen])
+    dependencies: [libeigen, argparse])
 ```
 
 We can further expand the example with some linear algebra.
 
 ```c++
 //| file: src/solve-dense.cpp
+#include <argparse/argparse.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <Eigen/Dense>
@@ -93,9 +94,8 @@ using Eigen::MatrixXd;
 using Eigen::VectorXd;
 using Eigen::Vector3d;
 using Eigen::seqN;
-
+using Eigen::placeholders::all;
 using std::views::enumerate;
-using std::views::transform;
 
 std::function<double(VectorXd const &)> multi_linear_function(std::vector<VectorXd> const &coef) {
     return [&coef] (VectorXd const &x) {
@@ -149,18 +149,48 @@ std::tuple<MatrixXd, VectorXd> mock_measurements(
         }
 
         measurement_values(m)
-            = model(measurement_inputs(m, Eigen::all))
+            = model(measurement_inputs(m, all))
             + std::normal_distribution(0.0, noise_level)(r);
     }
 
     return std::make_tuple(measurement_inputs, measurement_values);
 }
 
-int main() {
-    unsigned n_coef = 2;
-    unsigned c_min = 2, c_max = 3;
+int main(int argc, char *argv[]) {
+    argparse::ArgumentParser program("least-squares");
+    unsigned n_coef = 5;
+    program.add_argument("-n")
+        .help("number of coefficient chunks")
+        .store_into(n_coef);
+
+    unsigned c_min = 3;
+    program.add_argument("-cmin")
+        .help("minimum coefficient chunk size")
+        .store_into(c_min);
+
+    unsigned c_max = 8;
+    program.add_argument("-cmax")
+        .help("maximum coefficient chunk size")
+        .store_into(c_max);
+
     double noise_level = 0.1;
-    unsigned n_measurements = 10;
+    program.add_argument("-s", "--noise-level")
+        .help("noise amplitude")
+        .store_into(noise_level);
+
+    unsigned n_measurements = 100;
+    program.add_argument("-m")
+        .help("number of measurements")
+        .store_into(n_measurements);
+
+    try {
+        program.parse_args(argc, argv);
+    }
+    catch (const std::exception &exc) {
+        std::cerr << exc.what() << std::endl;
+        std::cerr << program;
+        std::exit(EXIT_FAILURE);
+    }
 
     std::mt19937_64 r;
     auto coef = random_coef(r, n_coef, c_min, c_max);
@@ -172,22 +202,25 @@ int main() {
 
     auto [measurement_inputs, measurement_values]
         = mock_measurements(r, coef, n_measurements, noise_level);
-    std::cout << measurement_inputs << "\n";
-    std::cout << measurement_values << "\n";
 
     MatrixXd design_matrix = measurement_inputs.transpose() * measurement_inputs;
     VectorXd design_vector = measurement_inputs.transpose() * measurement_values;
-    std::cout << "Design matrix:\n" << design_matrix << "\n";
-    std::cout << "Design vector:\n" << design_vector << "\n";
 
     auto inv_dm = design_matrix.inverse();
-    std::cout << "Solution 1:\n" << inv_dm * design_vector << "\n";
+    std::cout << "Solution using design matrix inverse:\n" << inv_dm * design_vector << "\n";
 
-    auto solution2 = measurement_inputs.bdcSvd().solve(measurement_values);
-    std::cout << "Solution 2:\n" << solution2 << "\n";
+    Eigen::ColPivHouseholderQR<MatrixXd> solver(design_matrix);
+    auto solution3 = solver.solve(design_vector);
+    std::cout << "Solution solving design matrix:\n" << solution3 << "\n";
 
-    // auto solution = design_matrix.bdcSvd().solve(design_vector);
-    // std::cout << "Solution:\n" << solution << "\n";
+    Eigen::BDCSVD<MatrixXd, Eigen::ComputeThinU | Eigen::ComputeThinV> direct_solver(measurement_inputs);
+    auto solution4 = direct_solver.solve(measurement_values);
+    std::cout << "Solution BDC SVD:\n" << solution4 << "\n";
+
+    Eigen::HouseholderQR<MatrixXd> direct_solver_qr(measurement_inputs);
+    auto solution2 = direct_solver_qr.solve(measurement_values);
+    std::cout << "Solution HouseholderQR:\n" << solution2 << "\n";
+
     return EXIT_SUCCESS;
 }
 ```

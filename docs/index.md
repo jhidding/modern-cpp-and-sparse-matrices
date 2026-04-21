@@ -16,7 +16,12 @@ project('sparse-world', 'cpp',
     version : '0.1.0',
     default_options : ['cpp_std=c++23'])
 
-libeigen = dependency('eigen3', version: '>=3.4')
+# libeigen = dependency('eigen3', version: '>=3.4')
+libeigen_inc = include_directories('./vendor/eigen-5.0.1')
+libeigen = declare_dependency(include_directories : libeigen_inc)
+
+argparse_inc = include_directories('./vendor/argparse-3.2/include')
+argparse = declare_dependency(include_directories : argparse_inc)
 
 <<meson-executables>>
 ```
