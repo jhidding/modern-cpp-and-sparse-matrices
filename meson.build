@@ -9,6 +9,13 @@ libeigen = dependency('eigen3', version: '>=3.4')
 executable('eigen-hello', 'src/eigen_hello.cpp',
     dependencies: [libeigen])
 # ~/~ end
+# ~/~ begin <<docs/eigen.md#meson-executables>>[1]
+executable('random-values', 'src/random_values.cpp')
+# ~/~ end
+# ~/~ begin <<docs/eigen.md#meson-executables>>[2]
+executable('solve-dense', 'src/solve-dense.cpp',
+    dependencies: [libeigen])
+# ~/~ end
 # ~/~ begin <<docs/modern-cpp.md#meson-executables>>[0]
 executable('hello', 'src/hello_world.cpp')
 # ~/~ end

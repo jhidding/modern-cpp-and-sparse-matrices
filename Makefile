@@ -1,7 +1,7 @@
 .PHONY: serve default
 .FORCE:
 
-targets = hello jetzt eigen-hello
+targets = hello jetzt eigen-hello random-values solve-dense
 run := uv run
 
 _bullet := "\\e[1m•\\e[m"

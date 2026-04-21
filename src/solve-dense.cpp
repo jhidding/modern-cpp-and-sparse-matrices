@@ -1,86 +1,4 @@
----
-icon: material/owl
----
-
-# About Eigen
-
-Eigen is a header-only library for doing linear algebra in C++.
-
-```meson
-#| id: meson-executables
-executable('eigen-hello', 'src/eigen_hello.cpp',
-    dependencies: [libeigen])
-```
-
-```c++
-//| file: src/eigen_hello.cpp
-#include <cstdlib>
-#include <iostream>
-#include <Eigen/Dense>
-
-using Eigen::MatrixXd;
-
-int main() {
-    MatrixXd m(2,2);
-    m(0,0) = 3;
-    m(1,0) = 2.5;
-    m(0,1) = -1;
-    m(1,1) = m(1,0) + m(0,1);
-    std::cout << m << "\n";
-    return EXIT_SUCCESS;
-}
-```
-
-## Random Numbers
-
-C++ has a nice library for generating random numbers.
-
-```meson
-#| id: meson-executables
-executable('random-values', 'src/random_values.cpp')
-```
-
-```c++
-//| file: src/random_values.cpp
-#include <cstdlib>
-#include <print>
-#include <random>
-
-int main() {
-    std::println("Some die throws ...");
-    std::mt19937_64 r;
-    std::uniform_int_distribution<int> die(1, 6);
-
-    for (unsigned i = 0; i < 10; ++i) {
-        int x = die(r);
-        std::println("{}", x);
-    }
-
-    std::println();
-    std::println("Some normal derivates ...");
-    std::normal_distribution normal_dist(0.0, 1.0);
-
-    for (unsigned i = 0; i < 10; ++i) {
-        double x = normal_dist(r);
-        std::println("{}", x);
-    }
-
-    return EXIT_SUCCESS;
-}
-```
-
-## Linear Algebra
-
-```meson
-#| id: meson-executables
-executable('solve-dense', 'src/solve-dense.cpp',
-    dependencies: [libeigen])
-```
-
-We can further expand the example with some linear algebra.
-
-```c++
-//| file: src/solve-dense.cpp
+// ~/~ begin <<docs/eigen.md#src/solve-dense.cpp>>[init]
 #include <cstdlib>
 #include <iostream>
 #include <Eigen/Dense>
@@ -190,4 +108,4 @@ int main() {
     // std::cout << "Solution:\n" << solution << "\n";
     return EXIT_SUCCESS;
 }
-```
+// ~/~ end
