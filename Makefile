@@ -1,4 +1,4 @@
-.PHONY: serve default
+.PHONY: serve default vendor
 .FORCE:
 
 targets = hello jetzt eigen-hello random-values solve-dense
@@ -34,7 +34,22 @@ endef
 
 $(foreach tgt,$(targets),$(eval $(call executable_template,$(tgt))))
 
-debug: $(targets:%=build/debug/%)
+debug: $(targets:%=build/debug/%) | vendor
 	@ln -sf debug/compile_commands.json build/
 
-release: $(targets:%=build/release/%)
+release: $(targets:%=build/release/%) | vendor
+
+# Install Vendor libraries
+
+eigen_src := "https://gitlab.com/libeigen/eigen/-/archive/5.0.1/eigen-5.0.1.tar.bz2"
+argparse_src := "https://github.com/p-ranav/argparse/archive/refs/tags/v3.2.tar.gz"
+
+vendor/argparse-3.2:
+	@echo -e "$(_bullet) Downloading $(_cyan)argparse 3.2$(_reset)"
+	@curl -s $(argparse_src) | tar xzvf - -C vendor
+
+vendor/eigen-5.0.1:
+	@echo -e "$(_bullet) Downloading $(_cyan)eigen 5.0.1$(_reset)"
+	@curl -s $(eigen_src) | tar xjvf - -C vendor
+
+vendor: vendor/argparse-3.2 vendor/eigen-5.0.1
