@@ -1,7 +1,8 @@
-.PHONY: serve default vendor
+.PHONY: serve default
 .FORCE:
 
-targets = hello jetzt eigen-hello random-values solve-dense
+targets = hello jetzt eigen-hello random-values least-squares
+vendor_deps := argparse-3.2 eigen-5.0.1
 run := uv run
 
 _bullet := "\\e[1m•\\e[m"
@@ -17,10 +18,12 @@ serve:
 # Make will remove this file if not made precious!
 .PRECIOUS: build/%/build.ninja
 
+vendor_breadcrumbs := $(vendor_deps:%=vendor/%)
+
 # Once build.ninja is generated, it will auto-update with meson.build
 # through running ninja. By making meson.build an order-only dependency
 # using the | symbol, this rule is only run if build.ninja doesn't exist.
-build/%/build.ninja: | meson.build
+build/%/build.ninja: $(vendor_breadcrumbs) | meson.build
 	@echo -e "$(_bullet) Running $(_cyan)meson setup$(_reset) for buildtype $(_green)$(@D:build/%=%)$(_reset)"
 	@$(run) meson setup --buildtype $(@D:build/%=%) $(@D)
 
@@ -34,22 +37,26 @@ endef
 
 $(foreach tgt,$(targets),$(eval $(call executable_template,$(tgt))))
 
-debug: $(targets:%=build/debug/%) | vendor
+debug: $(targets:%=build/debug/%)
 	@ln -sf debug/compile_commands.json build/
 
-release: $(targets:%=build/release/%) | vendor
+release: $(targets:%=build/release/%)
 
 # Install Vendor libraries
 
 eigen_src := "https://gitlab.com/libeigen/eigen/-/archive/5.0.1/eigen-5.0.1.tar.bz2"
 argparse_src := "https://github.com/p-ranav/argparse/archive/refs/tags/v3.2.tar.gz"
 
-vendor/argparse-3.2:
+vendor/.gitignore:
+	@mkdir $(@D)
+	@echo "*" > $@
+
+vendor/argparse-3.2: | vendor/.gitignore
 	@echo -e "$(_bullet) Downloading $(_cyan)argparse 3.2$(_reset)"
-	@curl -s $(argparse_src) | tar xzvf - -C vendor
+	@curl -L $(argparse_src) | tar xzf - -C vendor
 
-vendor/eigen-5.0.1:
+vendor/eigen-5.0.1: | vendor/.gitignore
 	@echo -e "$(_bullet) Downloading $(_cyan)eigen 5.0.1$(_reset)"
-	@curl -s $(eigen_src) | tar xjvf - -C vendor
+	@curl -L $(eigen_src) | tar xjf - -C vendor
 
-vendor: vendor/argparse-3.2 vendor/eigen-5.0.1
+vendor: $(vendor_breadcrumbs)

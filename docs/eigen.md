@@ -73,42 +73,76 @@ int main() {
 
 ```meson
 #| id: meson-executables
-executable('solve-dense', 'src/solve-dense.cpp',
+executable('least-squares', 'src/least-squares.cpp',
     dependencies: [libeigen, argparse])
 ```
 
-We can further expand the example with some linear algebra.
+Now we get to do some linear algebra on randomly generated block diagonal matrices. We suppose some arbitrary linear model with $n$ normally distributed coefficients $c_i$. We then simulate $m$ measurements of this model and add a little noise, resulting in a linear system of size $n \times m$, which we can solve using one of several available least-squares methods in Eigen.
+
+We'll have a little system of trait classes to write code that is generic for both dense and sparse matrices. To make sparse matrices perform efficiently, it can be advantageous to know the number of non-zero elements before hand. For now, we will only look at the efficiency of solving the actual linear system.
 
 ```c++
-//| file: src/solve-dense.cpp
-#include <argparse/argparse.hpp>
-#include <cstdlib>
-#include <iostream>
-#include <Eigen/Dense>
-#include <random>
-#include <functional>
-#include <numeric>
-#include <ranges>
+//| id: matrix-traits
+struct Sparse {};
+struct Dense {};
 
-using Eigen::MatrixXd;
-using Eigen::VectorXd;
-using Eigen::Vector3d;
-using Eigen::seqN;
-using Eigen::placeholders::all;
-using std::views::enumerate;
+template <typename T>
+struct MatrixTrait {};
+```
 
-std::function<double(VectorXd const &)> multi_linear_function(std::vector<VectorXd> const &coef) {
-    return [&coef] (VectorXd const &x) {
-        size_t idx = 0;
-        double result = 0.0;
-        for (auto &c : coef) {
-            result += c.dot(x(seqN(idx, c.size())));
-            idx += c.size();
-        }
-        return result;
-    };
-}
+After a sparse array is created, we need to compress the array, to make the QR solver work. Roughly what this does, it orders elements by column giving more efficient traversal. For dense matrices, this method is left empty. The QR decomposition is stored in the solver instance. If we need to solve for multiple vectors it is most efficient to keep the solver objects alive.
 
+
+### Dense matrices
+
+```c++
+//| id: matrix-traits
+template <>
+struct MatrixTrait<Dense> {
+    typedef Eigen::MatrixXd MatrixType;
+
+    inline static void set_element(MatrixType &A, unsigned i, unsigned j, double value) {
+        A(i, j) = value;
+    }
+
+    inline static void make_compressed(MatrixType &A) {}
+
+    inline static VectorXd solve_qr(MatrixType const &A, VectorXd const &b) {
+        Eigen::HouseholderQR<MatrixXd> direct_solver_qr(A);
+        return direct_solver_qr.solve(b);
+    }
+};
+```
+
+### Sparse matrices
+
+```c++
+//| id: matrix-traits
+template <>
+struct MatrixTrait<Sparse> {
+    typedef Eigen::SparseMatrix<double> MatrixType;
+
+    inline static void set_element(MatrixType &A, unsigned i, unsigned j, double value) {
+        A.insert(i, j) = value;
+    }
+
+    inline static void make_compressed(MatrixType &A) {
+        A.makeCompressed();
+    }
+
+    inline static VectorXd solve_qr(MatrixType const &A, VectorXd const &b) {
+        Eigen::SparseQR<MatrixType, Eigen::COLAMDOrdering<int>> direct_solver_qr(A);
+        return direct_solver_qr.solve(b);
+    }
+};
+```
+
+### Mocking measurements
+
+We emulate measurements involving only small parts of the full model domain. This results in block-diagonal design matrices. We could sprinkle around cross-terms later on. We define the multi-linear model by generating a set of vectors of random sizes.
+
+```c++
+//| id: mock-measurements
 template <typename RNG>
 std::vector<VectorXd> random_coef(RNG &r, unsigned n, unsigned a, unsigned b) {
     std::vector<VectorXd> result;
@@ -125,64 +159,96 @@ std::vector<VectorXd> random_coef(RNG &r, unsigned n, unsigned a, unsigned b) {
 
     return result;
 }
+```
 
-template <typename RNG>
-std::tuple<MatrixXd, VectorXd> mock_measurements(
-        RNG &r,
-        std::vector<VectorXd> const &coef,
-        size_t n_measurements,
-        double noise_level) {
+From this model we generate our measurements, returning a rectangular matrix and a vector.
+
+```c++
+//| id: mock-measurements
+template <typename M, typename RNG>
+std::tuple<typename MatrixTrait<M>::MatrixType, VectorXd> mock_measurements(
+        RNG &r, std::vector<VectorXd> const &coef, size_t n_measurements, double noise_level) {
+
+    using Matrix = MatrixTrait<M>::MatrixType;
+
     size_t n_coef = coef.size();
     std::vector<size_t> coef_idx;
     std::exclusive_scan(coef.cbegin(), coef.cend(), std::back_inserter(coef_idx), 0,
         [] (size_t x, auto const &c) { return x + c.size(); });
 
     size_t total_domain_size = coef_idx.back() + coef.back().size();
-    Eigen::MatrixXd measurement_inputs(n_measurements, total_domain_size);
+    Matrix measurement_inputs(n_measurements, total_domain_size);
     Eigen::VectorXd measurement_values(n_measurements);
 
-    auto model = multi_linear_function(coef);
     for (size_t m = 0; m < n_measurements; ++m) {
         unsigned c = std::uniform_int_distribution<unsigned>(0, n_coef-1)(r);
+        double y = 0.0;
         for (size_t i = 0; i < (size_t)coef[c].size(); ++i) {
-            measurement_inputs(m, coef_idx[c] + i) = std::normal_distribution(0.0, 1.0)(r);
+            double x = std::normal_distribution(0.0, 1.0)(r);
+            MatrixTrait<M>::set_element(measurement_inputs, m, coef_idx[c] + i, x);
+            y += coef[c][i] * x;
         }
 
-        measurement_values(m)
-            = model(measurement_inputs(m, all))
-            + std::normal_distribution(0.0, noise_level)(r);
+        measurement_values(m) = y + std::normal_distribution(0.0, noise_level)(r);
     }
 
+    MatrixTrait<M>::make_compressed(measurement_inputs);
     return std::make_tuple(measurement_inputs, measurement_values);
 }
+```
 
-int main(int argc, char *argv[]) {
+### Running the experiment
+
+```c++
+//| id: run-experiment
+template <typename M, typename RNG>
+void run_experiment(RNG &r, std::vector<VectorXd> const &coef, unsigned n_measurements, double noise_level) {
+    auto [measurement_inputs, measurement_values]
+        = mock_measurements<M>(r, coef, n_measurements, noise_level);
+
+    auto result = MatrixTrait<M>::solve_qr(measurement_inputs, measurement_values);
+    std::cout << "Solution:\n" << result << std::endl;
+}
+```
+
+### Main
+
+We use the [Argparse library](https://github.com/p-ranav/argparse) to do some argument parsing.
+
+??? "Argument parsing"
+
+    ```c++
+    //| id: argument-parsing
     argparse::ArgumentParser program("least-squares");
-    unsigned n_coef = 5;
+    
     program.add_argument("-n")
         .help("number of coefficient chunks")
         .store_into(n_coef);
-
-    unsigned c_min = 3;
+    
     program.add_argument("-cmin")
         .help("minimum coefficient chunk size")
         .store_into(c_min);
-
-    unsigned c_max = 8;
+    
     program.add_argument("-cmax")
         .help("maximum coefficient chunk size")
         .store_into(c_max);
-
-    double noise_level = 0.1;
+    
     program.add_argument("-s", "--noise-level")
         .help("noise amplitude")
         .store_into(noise_level);
-
-    unsigned n_measurements = 100;
+    
     program.add_argument("-m")
         .help("number of measurements")
         .store_into(n_measurements);
-
+    
+    auto &matrix_type = program.add_mutually_exclusive_group(true);
+    matrix_type.add_argument("-sparse")
+        .help("use sparse matrices")
+        .flag();
+    matrix_type.add_argument("-dense")
+        .help("use dense matrices")
+        .flag();
+    
     try {
         program.parse_args(argc, argv);
     }
@@ -191,36 +257,97 @@ int main(int argc, char *argv[]) {
         std::cerr << program;
         std::exit(EXIT_FAILURE);
     }
+    ```
 
-    std::mt19937_64 r;
-    auto coef = random_coef(r, n_coef, c_min, c_max);
+In the main function, we define the parameters with their default values, parse arguments, generate mock data and then run the experiment.
 
-    std::cout << "Generated coefficients:\n";
-    for (auto const [i, c] : coef | enumerate) {
-        std::cout << "---- " << i << " --------\n" << c << "\n";
-    }
+```c++
+//| id: least-squares-main
+unsigned n_coef = 5;
+unsigned c_min = 3;
+unsigned c_max = 8;
+double noise_level = 0.1;
+unsigned n_measurements = 100;
 
-    auto [measurement_inputs, measurement_values]
-        = mock_measurements(r, coef, n_measurements, noise_level);
+<<argument-parsing>>
 
-    MatrixXd design_matrix = measurement_inputs.transpose() * measurement_inputs;
-    VectorXd design_vector = measurement_inputs.transpose() * measurement_values;
+std::mt19937_64 r;
+auto coef = random_coef(r, n_coef, c_min, c_max);
 
-    auto inv_dm = design_matrix.inverse();
-    std::cout << "Solution using design matrix inverse:\n" << inv_dm * design_vector << "\n";
-
-    Eigen::ColPivHouseholderQR<MatrixXd> solver(design_matrix);
-    auto solution3 = solver.solve(design_vector);
-    std::cout << "Solution solving design matrix:\n" << solution3 << "\n";
-
-    Eigen::BDCSVD<MatrixXd, Eigen::ComputeThinU | Eigen::ComputeThinV> direct_solver(measurement_inputs);
-    auto solution4 = direct_solver.solve(measurement_values);
-    std::cout << "Solution BDC SVD:\n" << solution4 << "\n";
-
-    Eigen::HouseholderQR<MatrixXd> direct_solver_qr(measurement_inputs);
-    auto solution2 = direct_solver_qr.solve(measurement_values);
-    std::cout << "Solution HouseholderQR:\n" << solution2 << "\n";
-
-    return EXIT_SUCCESS;
+std::cout << "Generated coefficients:\n";
+for (auto const [i, c] : coef | enumerate) {
+    std::cout << "---- " << i << " --------\n" << c << "\n";
 }
+
+if (program["-dense"] == true) {
+    run_experiment<Dense>(r, coef, n_measurements, noise_level);
+} else {
+    run_experiment<Sparse>(r, coef, n_measurements, noise_level);
+}
+
+return EXIT_SUCCESS;
+```
+
+??? "file: src/least-squares.cpp"
+
+    ```c++
+    //| file: src/least-squares.cpp
+    #include <argparse/argparse.hpp>
+    #include <cstdlib>
+    #include <iostream>
+    #include <Eigen/Dense>
+    #include <Eigen/Sparse>
+    #include <Eigen/SparseQR>
+    #include <random>
+    #include <functional>
+    #include <numeric>
+    #include <ranges>
+    
+    using Eigen::MatrixXd;
+    using Eigen::VectorXd;
+    using Eigen::Vector3d;
+    using Eigen::seqN;
+    using DenseMatrix = Eigen::MatrixXd;
+    using SparseMatrix = Eigen::SparseMatrix<double>;
+    using std::views::enumerate;
+   
+    <<matrix-traits>>
+    <<mock-measurements>>
+    <<run-experiment>>
+    
+    std::function<double(VectorXd const &)> multi_linear_function(std::vector<VectorXd> const &coef) {
+        return [&coef] (VectorXd const &x) {
+            size_t idx = 0;
+            double result = 0.0;
+            for (auto &c : coef) {
+                result += c.dot(x(seqN(idx, c.size())));
+                idx += c.size();
+            }
+            return result;
+        };
+    }
+    
+    int main(int argc, char *argv[]) {
+        <<least-squares-main>>
+    }
+    ```
+
+```c++
+// Matrix design_matrix = measurement_inputs.transpose() * measurement_inputs;
+// VectorXd design_vector = measurement_inputs.transpose() * measurement_values;
+
+// Eigen::ColPivHouseholderQR<MatrixXd> solver(design_matrix);
+// auto solution3 = solver.solve(design_vector);
+// std::cout << "Solution solving design matrix:\n" << solution3 << "\n";
+
+// Eigen::BDCSVD<MatrixXd, Eigen::ComputeThinU | Eigen::ComputeThinV> direct_solver(measurement_inputs);
+// auto solution4 = direct_solver.solve(measurement_values);
+// std::cout << "Solution BDC SVD:\n" << solution4 << "\n";
+
+// Eigen::HouseholderQR<MatrixXd> direct_solver_qr(measurement_inputs);
+// auto solution2 = direct_solver_qr.solve(measurement_values);
+// std::cout << "Solution HouseholderQR:\n" << solution2 << "\n";
+
+// auto inv_dm = design_matrix.inverse();
+// std::cout << "Solution using design matrix inverse:\n" << inv_dm * design_vector << "\n";
 ```

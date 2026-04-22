@@ -18,7 +18,7 @@ executable('eigen-hello', 'src/eigen_hello.cpp',
 executable('random-values', 'src/random_values.cpp')
 # ~/~ end
 # ~/~ begin <<docs/eigen.md#meson-executables>>[2]
-executable('solve-dense', 'src/solve-dense.cpp',
+executable('least-squares', 'src/least-squares.cpp',
     dependencies: [libeigen, argparse])
 # ~/~ end
 # ~/~ begin <<docs/modern-cpp.md#meson-executables>>[0]
