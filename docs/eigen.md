@@ -74,10 +74,13 @@ int main() {
 ```meson
 #| id: meson-executables
 executable('least-squares', 'src/least-squares.cpp',
-    dependencies: [libeigen, argparse])
+    dependencies: [libeigen, argparse, benchmark],
+    include_directories: incdir)
 ```
 
 Now we get to do some linear algebra on randomly generated block diagonal matrices. We suppose some arbitrary linear model with $n$ normally distributed coefficients $c_i$. We then simulate $m$ measurements of this model and add a little noise, resulting in a linear system of size $n \times m$, which we can solve using one of several available least-squares methods in Eigen.
+
+### Matrix traits
 
 We'll have a little system of trait classes to write code that is generic for both dense and sparse matrices. To make sparse matrices perform efficiently, it can be advantageous to know the number of non-zero elements before hand. For now, we will only look at the efficiency of solving the actual linear system.
 
@@ -87,18 +90,32 @@ struct Sparse {};
 struct Dense {};
 
 template <typename T>
-struct MatrixTrait {};
+struct MatrixTraits {};
 ```
 
 After a sparse array is created, we need to compress the array, to make the QR solver work. Roughly what this does, it orders elements by column giving more efficient traversal. For dense matrices, this method is left empty. The QR decomposition is stored in the solver instance. If we need to solve for multiple vectors it is most efficient to keep the solver objects alive.
 
+```c++
+//| file: src/matrix_traits.hpp
+#pragma once
+#include <Eigen/Dense>
+#include <Eigen/Sparse>
+#include <Eigen/SparseQR>
+
+namespace ls_bench {
+    using Eigen::MatrixXd;
+    using Eigen::VectorXd;
+
+    <<matrix-traits>>
+}
+```
 
 ### Dense matrices
 
 ```c++
 //| id: matrix-traits
 template <>
-struct MatrixTrait<Dense> {
+struct MatrixTraits<Dense> {
     typedef Eigen::MatrixXd MatrixType;
 
     inline static void set_element(MatrixType &A, unsigned i, unsigned j, double value) {
@@ -119,7 +136,7 @@ struct MatrixTrait<Dense> {
 ```c++
 //| id: matrix-traits
 template <>
-struct MatrixTrait<Sparse> {
+struct MatrixTraits<Sparse> {
     typedef Eigen::SparseMatrix<double> MatrixType;
 
     inline static void set_element(MatrixType &A, unsigned i, unsigned j, double value) {
@@ -166,10 +183,10 @@ From this model we generate our measurements, returning a rectangular matrix and
 ```c++
 //| id: mock-measurements
 template <typename M, typename RNG>
-std::tuple<typename MatrixTrait<M>::MatrixType, VectorXd> mock_measurements(
+std::tuple<typename MatrixTraits<M>::MatrixType, VectorXd> mock_measurements(
         RNG &r, std::vector<VectorXd> const &coef, size_t n_measurements, double noise_level) {
 
-    using Matrix = MatrixTrait<M>::MatrixType;
+    using Matrix = MatrixTraits<M>::MatrixType;
 
     size_t n_coef = coef.size();
     std::vector<size_t> coef_idx;
@@ -185,14 +202,14 @@ std::tuple<typename MatrixTrait<M>::MatrixType, VectorXd> mock_measurements(
         double y = 0.0;
         for (size_t i = 0; i < (size_t)coef[c].size(); ++i) {
             double x = std::normal_distribution(0.0, 1.0)(r);
-            MatrixTrait<M>::set_element(measurement_inputs, m, coef_idx[c] + i, x);
+            MatrixTraits<M>::set_element(measurement_inputs, m, coef_idx[c] + i, x);
             y += coef[c][i] * x;
         }
 
         measurement_values(m) = y + std::normal_distribution(0.0, noise_level)(r);
     }
 
-    MatrixTrait<M>::make_compressed(measurement_inputs);
+    MatrixTraits<M>::make_compressed(measurement_inputs);
     return std::make_tuple(measurement_inputs, measurement_values);
 }
 ```
@@ -206,7 +223,7 @@ void run_experiment(RNG &r, std::vector<VectorXd> const &coef, unsigned n_measur
     auto [measurement_inputs, measurement_values]
         = mock_measurements<M>(r, coef, n_measurements, noise_level);
 
-    auto result = MatrixTrait<M>::solve_qr(measurement_inputs, measurement_values);
+    auto result = MatrixTraits<M>::solve_qr(measurement_inputs, measurement_values);
     std::cout << "Solution:\n" << result << std::endl;
 }
 ```
@@ -220,27 +237,27 @@ We use the [Argparse library](https://github.com/p-ranav/argparse) to do some ar
     ```c++
     //| id: argument-parsing
     argparse::ArgumentParser program("least-squares");
-    
+
     program.add_argument("-n")
         .help("number of coefficient chunks")
         .store_into(n_coef);
-    
+
     program.add_argument("-cmin")
         .help("minimum coefficient chunk size")
         .store_into(c_min);
-    
+
     program.add_argument("-cmax")
         .help("maximum coefficient chunk size")
         .store_into(c_max);
-    
+
     program.add_argument("-s", "--noise-level")
         .help("noise amplitude")
         .store_into(noise_level);
-    
+
     program.add_argument("-m")
         .help("number of measurements")
         .store_into(n_measurements);
-    
+
     auto &matrix_type = program.add_mutually_exclusive_group(true);
     matrix_type.add_argument("-sparse")
         .help("use sparse matrices")
@@ -248,7 +265,7 @@ We use the [Argparse library](https://github.com/p-ranav/argparse) to do some ar
     matrix_type.add_argument("-dense")
         .help("use dense matrices")
         .flag();
-    
+
     try {
         program.parse_args(argc, argv);
     }
@@ -302,7 +319,11 @@ return EXIT_SUCCESS;
     #include <functional>
     #include <numeric>
     #include <ranges>
-    
+
+    #include "matrix_traits.hpp"
+
+    using namespace ls_bench;
+
     using Eigen::MatrixXd;
     using Eigen::VectorXd;
     using Eigen::Vector3d;
@@ -310,11 +331,10 @@ return EXIT_SUCCESS;
     using DenseMatrix = Eigen::MatrixXd;
     using SparseMatrix = Eigen::SparseMatrix<double>;
     using std::views::enumerate;
-   
-    <<matrix-traits>>
+
     <<mock-measurements>>
     <<run-experiment>>
-    
+
     std::function<double(VectorXd const &)> multi_linear_function(std::vector<VectorXd> const &coef) {
         return [&coef] (VectorXd const &x) {
             size_t idx = 0;
@@ -326,7 +346,7 @@ return EXIT_SUCCESS;
             return result;
         };
     }
-    
+
     int main(int argc, char *argv[]) {
         <<least-squares-main>>
     }

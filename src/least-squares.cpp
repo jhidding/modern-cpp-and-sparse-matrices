@@ -10,6 +10,10 @@
 #include <numeric>
 #include <ranges>
 
+#include "matrix_traits.hpp"
+
+using namespace ls_bench;
+
 using Eigen::MatrixXd;
 using Eigen::VectorXd;
 using Eigen::Vector3d;
@@ -17,50 +21,7 @@ using Eigen::seqN;
 using DenseMatrix = Eigen::MatrixXd;
 using SparseMatrix = Eigen::SparseMatrix<double>;
 using std::views::enumerate;
-   
-// ~/~ begin <<docs/eigen.md#matrix-traits>>[init]
-struct Sparse {};
-struct Dense {};
 
-template <typename T>
-struct MatrixTrait {};
-// ~/~ end
-// ~/~ begin <<docs/eigen.md#matrix-traits>>[1]
-template <>
-struct MatrixTrait<Dense> {
-    typedef Eigen::MatrixXd MatrixType;
-
-    inline static void set_element(MatrixType &A, unsigned i, unsigned j, double value) {
-        A(i, j) = value;
-    }
-
-    inline static void make_compressed(MatrixType &A) {}
-
-    inline static VectorXd solve_qr(MatrixType const &A, VectorXd const &b) {
-        Eigen::HouseholderQR<MatrixXd> direct_solver_qr(A);
-        return direct_solver_qr.solve(b);
-    }
-};
-// ~/~ end
-// ~/~ begin <<docs/eigen.md#matrix-traits>>[2]
-template <>
-struct MatrixTrait<Sparse> {
-    typedef Eigen::SparseMatrix<double> MatrixType;
-
-    inline static void set_element(MatrixType &A, unsigned i, unsigned j, double value) {
-        A.insert(i, j) = value;
-    }
-
-    inline static void make_compressed(MatrixType &A) {
-        A.makeCompressed();
-    }
-
-    inline static VectorXd solve_qr(MatrixType const &A, VectorXd const &b) {
-        Eigen::SparseQR<MatrixType, Eigen::COLAMDOrdering<int>> direct_solver_qr(A);
-        return direct_solver_qr.solve(b);
-    }
-};
-// ~/~ end
 // ~/~ begin <<docs/eigen.md#mock-measurements>>[init]
 template <typename RNG>
 std::vector<VectorXd> random_coef(RNG &r, unsigned n, unsigned a, unsigned b) {
@@ -81,10 +42,10 @@ std::vector<VectorXd> random_coef(RNG &r, unsigned n, unsigned a, unsigned b) {
 // ~/~ end
 // ~/~ begin <<docs/eigen.md#mock-measurements>>[1]
 template <typename M, typename RNG>
-std::tuple<typename MatrixTrait<M>::MatrixType, VectorXd> mock_measurements(
+std::tuple<typename MatrixTraits<M>::MatrixType, VectorXd> mock_measurements(
         RNG &r, std::vector<VectorXd> const &coef, size_t n_measurements, double noise_level) {
 
-    using Matrix = MatrixTrait<M>::MatrixType;
+    using Matrix = MatrixTraits<M>::MatrixType;
 
     size_t n_coef = coef.size();
     std::vector<size_t> coef_idx;
@@ -100,14 +61,14 @@ std::tuple<typename MatrixTrait<M>::MatrixType, VectorXd> mock_measurements(
         double y = 0.0;
         for (size_t i = 0; i < (size_t)coef[c].size(); ++i) {
             double x = std::normal_distribution(0.0, 1.0)(r);
-            MatrixTrait<M>::set_element(measurement_inputs, m, coef_idx[c] + i, x);
+            MatrixTraits<M>::set_element(measurement_inputs, m, coef_idx[c] + i, x);
             y += coef[c][i] * x;
         }
 
         measurement_values(m) = y + std::normal_distribution(0.0, noise_level)(r);
     }
 
-    MatrixTrait<M>::make_compressed(measurement_inputs);
+    MatrixTraits<M>::make_compressed(measurement_inputs);
     return std::make_tuple(measurement_inputs, measurement_values);
 }
 // ~/~ end
@@ -117,7 +78,7 @@ void run_experiment(RNG &r, std::vector<VectorXd> const &coef, unsigned n_measur
     auto [measurement_inputs, measurement_values]
         = mock_measurements<M>(r, coef, n_measurements, noise_level);
 
-    auto result = MatrixTrait<M>::solve_qr(measurement_inputs, measurement_values);
+    auto result = MatrixTraits<M>::solve_qr(measurement_inputs, measurement_values);
     std::cout << "Solution:\n" << result << std::endl;
 }
 // ~/~ end
