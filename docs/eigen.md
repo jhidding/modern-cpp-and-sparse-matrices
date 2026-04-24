@@ -73,8 +73,8 @@ int main() {
 
 ```meson
 #| id: meson-executables
-executable('least-squares', 'src/least-squares.cpp',
-    dependencies: [libeigen, argparse, benchmark],
+executable('least-squares', 'src/least_squares.cpp',
+    dependencies: [libeigen, argparse],
     include_directories: incdir)
 ```
 
@@ -154,7 +154,19 @@ struct MatrixTraits<Sparse> {
 };
 ```
 
-### Mocking measurements
+## Mocking measurements
+
+```c++
+//| file: src/measurements.hpp
+#pragma once
+#include <vector>
+#include <random>
+#include "matrix_traits.hpp"
+
+namespace ls_bench {
+    <<mock-measurements>>
+}
+```
 
 We emulate measurements involving only small parts of the full model domain. This results in block-diagonal design matrices. We could sprinkle around cross-terms later on. We define the multi-linear model by generating a set of vectors of random sizes.
 
@@ -195,7 +207,7 @@ std::tuple<typename MatrixTraits<M>::MatrixType, VectorXd> mock_measurements(
 
     size_t total_domain_size = coef_idx.back() + coef.back().size();
     Matrix measurement_inputs(n_measurements, total_domain_size);
-    Eigen::VectorXd measurement_values(n_measurements);
+    VectorXd measurement_values(n_measurements);
 
     for (size_t m = 0; m < n_measurements; ++m) {
         unsigned c = std::uniform_int_distribution<unsigned>(0, n_coef-1)(r);
@@ -305,34 +317,26 @@ if (program["-dense"] == true) {
 return EXIT_SUCCESS;
 ```
 
-??? "file: src/least-squares.cpp"
+??? "file: src/least_squares.cpp"
 
     ```c++
-    //| file: src/least-squares.cpp
+    //| file: src/least_squares.cpp
     #include <argparse/argparse.hpp>
     #include <cstdlib>
     #include <iostream>
     #include <Eigen/Dense>
-    #include <Eigen/Sparse>
-    #include <Eigen/SparseQR>
     #include <random>
     #include <functional>
-    #include <numeric>
     #include <ranges>
 
     #include "matrix_traits.hpp"
+    #include "measurements.hpp"
 
     using namespace ls_bench;
 
-    using Eigen::MatrixXd;
-    using Eigen::VectorXd;
-    using Eigen::Vector3d;
     using Eigen::seqN;
-    using DenseMatrix = Eigen::MatrixXd;
-    using SparseMatrix = Eigen::SparseMatrix<double>;
     using std::views::enumerate;
 
-    <<mock-measurements>>
     <<run-experiment>>
 
     std::function<double(VectorXd const &)> multi_linear_function(std::vector<VectorXd> const &coef) {

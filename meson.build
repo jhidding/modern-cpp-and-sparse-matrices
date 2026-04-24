@@ -19,7 +19,12 @@ benchmark = declare_dependency(
     include_directories : benchmark_inc,
     link_args : benchmark_lib)
 
-# ~/~ begin <<docs/eigen.md#meson-executables>>[init]
+# ~/~ begin <<docs/benchmark.md#meson-executables>>[init]
+executable('ls-bench', 'src/benchmark.cpp',
+    dependencies: [libeigen, benchmark],
+    include_directories: incdir)
+# ~/~ end
+# ~/~ begin <<docs/eigen.md#meson-executables>>[0]
 executable('eigen-hello', 'src/eigen_hello.cpp',
     dependencies: [libeigen])
 # ~/~ end
@@ -27,8 +32,8 @@ executable('eigen-hello', 'src/eigen_hello.cpp',
 executable('random-values', 'src/random_values.cpp')
 # ~/~ end
 # ~/~ begin <<docs/eigen.md#meson-executables>>[2]
-executable('least-squares', 'src/least-squares.cpp',
-    dependencies: [libeigen, argparse, benchmark],
+executable('least-squares', 'src/least_squares.cpp',
+    dependencies: [libeigen, argparse],
     include_directories: incdir)
 # ~/~ end
 # ~/~ begin <<docs/modern-cpp.md#meson-executables>>[0]

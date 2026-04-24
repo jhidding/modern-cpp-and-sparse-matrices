@@ -1,7 +1,7 @@
 .PHONY: serve default
 .FORCE:
 
-targets = hello jetzt eigen-hello random-values least-squares
+targets = hello jetzt eigen-hello random-values least-squares ls-bench
 vendor_deps := argparse-3.2 eigen-5.0.1 benchmark-1.9.5
 run := uv run
 
