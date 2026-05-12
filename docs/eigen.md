@@ -86,11 +86,18 @@ We'll have a little system of trait classes to write code that is generic for bo
 
 ```c++
 //| id: matrix-traits
-struct Sparse {};
-struct Dense {};
+struct StorageClass {};
+struct Sparse: public StorageClass {};
+struct Dense: public StorageClass {};
 
-template <typename T>
+struct SolverClass {};
+struct QR: public SolverClass {};
+
+template <typename Real, typename Storage>
 struct MatrixTraits {};
+
+template <typename Matrix, typename Solver>
+struct SolverTraits {};
 ```
 
 After a sparse array is created, we need to compress the array, to make the QR solver work. Roughly what this does, it orders elements by column giving more efficient traversal. For dense matrices, this method is left empty. The QR decomposition is stored in the solver instance. If we need to solve for multiple vectors it is most efficient to keep the solver objects alive.
@@ -115,7 +122,7 @@ namespace ls_bench {
 ```c++
 //| id: matrix-traits
 template <>
-struct MatrixTraits<Dense> {
+struct MatrixTraits<double, Dense> {
     typedef Eigen::MatrixXd MatrixType;
 
     inline static void set_element(MatrixType &A, unsigned i, unsigned j, double value) {
@@ -123,8 +130,18 @@ struct MatrixTraits<Dense> {
     }
 
     inline static void make_compressed(MatrixType &A) {}
+};
 
-    inline static VectorXd solve_qr(MatrixType const &A, VectorXd const &b) {
+template <>
+struct SolverTraits<MatrixTraits<double, Dense>, QR> {
+    using MatrixType = typename MatrixTraits<double, Dense>::MatrixType;
+    using SolverType = Eigen::HouseholderQR<MatrixType>;
+
+    static SolverType make_solver(MatrixType const &A) {
+        return SolverType(A);
+    }
+
+    inline static VectorXd solve(MatrixType const &A, VectorXd const &b) {
         Eigen::HouseholderQR<MatrixXd> direct_solver_qr(A);
         return direct_solver_qr.solve(b);
     }
@@ -135,9 +152,9 @@ struct MatrixTraits<Dense> {
 
 ```c++
 //| id: matrix-traits
-template <>
-struct MatrixTraits<Sparse> {
-    typedef Eigen::SparseMatrix<double> MatrixType;
+template <typename Real>
+struct MatrixTraits<Real, Sparse> {
+    typedef Eigen::SparseMatrix<Real> MatrixType;
 
     inline static void set_element(MatrixType &A, unsigned i, unsigned j, double value) {
         A.insert(i, j) = value;
@@ -146,9 +163,19 @@ struct MatrixTraits<Sparse> {
     inline static void make_compressed(MatrixType &A) {
         A.makeCompressed();
     }
+};
 
-    inline static VectorXd solve_qr(MatrixType const &A, VectorXd const &b) {
-        Eigen::SparseQR<MatrixType, Eigen::COLAMDOrdering<int>> direct_solver_qr(A);
+template <typename Real>
+struct SolverTraits<MatrixTraits<Real, Sparse>, QR> {
+    using MatrixType = typename MatrixTraits<Real, Sparse>::MatrixType;
+    using SolverType = Eigen::SparseQR<MatrixType, Eigen::COLAMDOrdering<int>>;
+
+    static SolverType make_solver(MatrixType const &A) {
+        return SolverType(A);
+    }
+
+    inline static VectorXd solve(MatrixType const &A, VectorXd const &b) {
+        SolverType direct_solver_qr(A);
         return direct_solver_qr.solve(b);
     }
 };
@@ -195,10 +222,10 @@ From this model we generate our measurements, returning a rectangular matrix and
 ```c++
 //| id: mock-measurements
 template <typename M, typename RNG>
-std::tuple<typename MatrixTraits<M>::MatrixType, VectorXd> mock_measurements(
+std::tuple<typename MatrixTraits<double, M>::MatrixType, VectorXd> mock_measurements(
         RNG &r, std::vector<VectorXd> const &coef, size_t n_measurements, double noise_level) {
 
-    using Matrix = MatrixTraits<M>::MatrixType;
+    using Matrix = MatrixTraits<double, M>::MatrixType;
 
     size_t n_coef = coef.size();
     std::vector<size_t> coef_idx;
@@ -214,14 +241,14 @@ std::tuple<typename MatrixTraits<M>::MatrixType, VectorXd> mock_measurements(
         double y = 0.0;
         for (size_t i = 0; i < (size_t)coef[c].size(); ++i) {
             double x = std::normal_distribution(0.0, 1.0)(r);
-            MatrixTraits<M>::set_element(measurement_inputs, m, coef_idx[c] + i, x);
+            MatrixTraits<double, M>::set_element(measurement_inputs, m, coef_idx[c] + i, x);
             y += coef[c][i] * x;
         }
 
         measurement_values(m) = y + std::normal_distribution(0.0, noise_level)(r);
     }
 
-    MatrixTraits<M>::make_compressed(measurement_inputs);
+    MatrixTraits<double, M>::make_compressed(measurement_inputs);
     return std::make_tuple(measurement_inputs, measurement_values);
 }
 ```
@@ -232,10 +259,11 @@ std::tuple<typename MatrixTraits<M>::MatrixType, VectorXd> mock_measurements(
 //| id: run-experiment
 template <typename M, typename RNG>
 void run_experiment(RNG &r, std::vector<VectorXd> const &coef, unsigned n_measurements, double noise_level) {
+    using SolverT = SolverTraits<MatrixTraits<double, M>, QR>;
+
     auto [measurement_inputs, measurement_values]
         = mock_measurements<M>(r, coef, n_measurements, noise_level);
-
-    auto result = MatrixTraits<M>::solve_qr(measurement_inputs, measurement_values);
+    auto result = SolverT::make_solver(measurement_inputs).solve(measurement_values);
     std::cout << "Solution:\n" << result << std::endl;
 }
 ```

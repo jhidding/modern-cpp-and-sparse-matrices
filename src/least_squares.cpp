@@ -18,10 +18,11 @@ using std::views::enumerate;
 // ~/~ begin <<docs/eigen.md#run-experiment>>[init]
 template <typename M, typename RNG>
 void run_experiment(RNG &r, std::vector<VectorXd> const &coef, unsigned n_measurements, double noise_level) {
+    using SolverT = SolverTraits<MatrixTraits<double, M>, QR>;
+
     auto [measurement_inputs, measurement_values]
         = mock_measurements<M>(r, coef, n_measurements, noise_level);
-
-    auto result = MatrixTraits<M>::solve_qr(measurement_inputs, measurement_values);
+    auto result = SolverT::make_solver(measurement_inputs).solve(measurement_values);
     std::cout << "Solution:\n" << result << std::endl;
 }
 // ~/~ end

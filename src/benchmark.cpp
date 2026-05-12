@@ -13,7 +13,7 @@ static void BM_sparse_qr(benchmark::State &state) {
     auto [input, value] = mock_measurements<M>(r, coef, state.range(1), 0.1);
     // state.ResumeTiming();
     for (auto _ : state) {
-        auto result = MatrixTraits<M>::solve_qr(input, value);
+        auto result = SolverTraits<MatrixTraits<double, M>, QR>::solve(input, value);
         benchmark::DoNotOptimize(result);
     }
 }

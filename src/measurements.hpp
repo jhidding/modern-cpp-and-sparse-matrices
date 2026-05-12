@@ -25,10 +25,10 @@ namespace ls_bench {
     // ~/~ end
     // ~/~ begin <<docs/eigen.md#mock-measurements>>[1]
     template <typename M, typename RNG>
-    std::tuple<typename MatrixTraits<M>::MatrixType, VectorXd> mock_measurements(
+    std::tuple<typename MatrixTraits<double, M>::MatrixType, VectorXd> mock_measurements(
             RNG &r, std::vector<VectorXd> const &coef, size_t n_measurements, double noise_level) {
     
-        using Matrix = MatrixTraits<M>::MatrixType;
+        using Matrix = MatrixTraits<double, M>::MatrixType;
     
         size_t n_coef = coef.size();
         std::vector<size_t> coef_idx;
@@ -44,14 +44,14 @@ namespace ls_bench {
             double y = 0.0;
             for (size_t i = 0; i < (size_t)coef[c].size(); ++i) {
                 double x = std::normal_distribution(0.0, 1.0)(r);
-                MatrixTraits<M>::set_element(measurement_inputs, m, coef_idx[c] + i, x);
+                MatrixTraits<double, M>::set_element(measurement_inputs, m, coef_idx[c] + i, x);
                 y += coef[c][i] * x;
             }
     
             measurement_values(m) = y + std::normal_distribution(0.0, noise_level)(r);
         }
     
-        MatrixTraits<M>::make_compressed(measurement_inputs);
+        MatrixTraits<double, M>::make_compressed(measurement_inputs);
         return std::make_tuple(measurement_inputs, measurement_values);
     }
     // ~/~ end
