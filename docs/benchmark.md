@@ -1,5 +1,6 @@
 ---
 title: Benchmarking
+icon: lucide/chart-column
 ---
 
 ```meson
